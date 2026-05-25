@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 from alpha_futures_bot.runner import SimulationSummary, run_simulation
@@ -15,10 +16,17 @@ def test_full_offline_simulation_writes_logs_and_summary(tmp_path: Path) -> None
     assert isinstance(summary, SimulationSummary)
     assert summary.total_candles == 221
     assert summary.scans_written == 221
+    assert summary.report.total_candles == 221
+    assert summary.report.total_closed_trades >= 1
+    assert summary.report.ending_equity >= summary.report.ending_balance
     assert (logs_dir / "scans.csv").exists()
     assert (logs_dir / "trades.csv").exists()
+    assert (logs_dir / "summary.json").exists()
     assert len(_rows(logs_dir / "scans.csv")) == 221
     assert len(_rows(logs_dir / "trades.csv")) >= 1
+    payload = json.loads((logs_dir / "summary.json").read_text(encoding="utf-8"))
+    assert payload["total_candles"] == 221
+    assert "profit_factor" in payload
 
 
 def test_runner_handles_short_history_without_crashing(tmp_path: Path) -> None:
@@ -34,6 +42,10 @@ def test_runner_handles_short_history_without_crashing(tmp_path: Path) -> None:
     assert summary.total_candles == 2
     assert summary.scans_written == 2
     assert summary.closed_trade_count == 0
+    assert summary.report.total_closed_trades == 0
+    assert summary.report.win_rate == 0.0
+    payload = json.loads((tmp_path / "logs" / "summary.json").read_text(encoding="utf-8"))
+    assert payload["total_closed_trades"] == 0
 
 
 def test_runner_uses_position_manager_decision_not_direct_risk_call() -> None:

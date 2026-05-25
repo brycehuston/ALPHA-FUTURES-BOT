@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import csv
+import json
+from dataclasses import asdict, is_dataclass
 from collections.abc import Mapping
+from math import isfinite, isnan
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +56,7 @@ class SimulationLogger:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.scans_path = self.logs_dir / "scans.csv"
         self.trades_path = self.logs_dir / "trades.csv"
+        self.summary_path = self.logs_dir / "summary.json"
         self._ensure_file(self.scans_path, SCAN_LOG_FIELDS)
         self._ensure_file(self.trades_path, TRADE_LOG_FIELDS)
         self._trade_keys = self._load_trade_keys()
@@ -80,6 +84,12 @@ class SimulationLogger:
         self._append_row(self.trades_path, TRADE_LOG_FIELDS, row)
         self._trade_keys.add(trade_key)
         return True
+
+    def write_summary(self, report: Any) -> None:
+        payload = asdict(report) if is_dataclass(report) else dict(report)
+        with self.summary_path.open("w", encoding="utf-8") as handle:
+            json.dump(_json_safe(payload), handle, indent=2, sort_keys=True, allow_nan=False)
+            handle.write("\n")
 
     def _ensure_file(self, path: Path, fields: tuple[str, ...]) -> None:
         if path.exists():
@@ -113,3 +123,19 @@ class SimulationLogger:
             str(row["exit_price"]),
             str(row["close_reason"]),
         )
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, float):
+        if isfinite(value):
+            return value
+        if isnan(value):
+            return "NaN"
+        if value > 0:
+            return "Infinity"
+        return "-Infinity"
+    return value

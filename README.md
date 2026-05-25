@@ -44,5 +44,8 @@ The simulation writes local CSV logs only:
 
 - `logs/scans.csv`
 - `logs/trades.csv`
+- `logs/summary.json`
+
+The summary report includes return percentage, win rate, profit factor, max drawdown, equity high/low, average trade PnL, and best/worst trade.
 
 No live trading, testnet trading, exchange SDKs, exchange URLs, network calls, API keys, wallets, private keys, secrets, or `.env` loading are used.

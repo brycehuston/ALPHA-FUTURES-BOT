@@ -14,6 +14,7 @@ from alpha_futures_bot.logging_service import SimulationLogger
 from alpha_futures_bot.models import Candle, Regime, Signal
 from alpha_futures_bot.position import PositionDecision, PositionManager
 from alpha_futures_bot.regime import detect_regime
+from alpha_futures_bot.reporting import BacktestReport, build_backtest_report
 from alpha_futures_bot.strategy import generate_signal
 
 
@@ -26,6 +27,7 @@ class SimulationSummary:
     open_position_count: int
     closed_trade_count: int
     scans_written: int
+    report: BacktestReport
 
 
 def run_simulation(
@@ -38,6 +40,7 @@ def run_simulation(
     manager = PositionManager(broker)
     logger = SimulationLogger(logs_dir)
     scans_written = 0
+    equity_curve: list[float] = []
 
     for index, candle in enumerate(candles):
         update = manager.update_from_candle(candle)
@@ -50,6 +53,7 @@ def run_simulation(
         decision = manager.handle_signal(signal, candle.timestamp)
 
         unrealized_pnl = broker.mark_to_market(candle.symbol, candle.close)
+        equity_curve.append(broker.cash_balance + unrealized_pnl)
         open_position = broker.get_open_position(candle.symbol)
         logger.log_scan(
             _scan_row(
@@ -65,6 +69,18 @@ def run_simulation(
         )
         scans_written += 1
 
+    ending_equity = equity_curve[-1] if equity_curve else broker.cash_balance
+    report = build_backtest_report(
+        total_candles=len(candles),
+        starting_balance=float(starting_balance),
+        ending_balance=broker.cash_balance,
+        ending_equity=ending_equity,
+        open_position_count=len(broker.open_positions),
+        closed_positions=broker.closed_positions,
+        equity_curve=equity_curve,
+    )
+    logger.write_summary(report)
+
     return SimulationSummary(
         total_candles=len(candles),
         starting_balance=float(starting_balance),
@@ -73,6 +89,7 @@ def run_simulation(
         open_position_count=len(broker.open_positions),
         closed_trade_count=len(broker.closed_positions),
         scans_written=scans_written,
+        report=report,
     )
 
 
@@ -89,7 +106,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"candles={summary.total_candles}, "
         f"starting_balance={summary.starting_balance:.2f}, "
         f"ending_cash_balance={summary.ending_cash_balance:.2f}, "
+        f"ending_equity={summary.report.ending_equity:.2f}, "
         f"realized_pnl={summary.realized_pnl:.2f}, "
+        f"return_pct={summary.report.return_percentage:.2f}, "
+        f"win_rate={summary.report.win_rate:.2f}, "
+        f"profit_factor={_format_float(summary.report.profit_factor)}, "
+        f"max_drawdown={summary.report.max_drawdown:.2f}, "
         f"open_positions={summary.open_position_count}, "
         f"closed_trades={summary.closed_trade_count}, "
         f"scans={summary.scans_written}"
@@ -123,6 +145,14 @@ def _scan_row(
         "unrealized_pnl": unrealized_pnl,
         "open_position_side": open_position_side,
     }
+
+
+def _format_float(value: float) -> str:
+    if value == float("inf"):
+        return "Infinity"
+    if value == float("-inf"):
+        return "-Infinity"
+    return f"{value:.2f}"
 
 
 if __name__ == "__main__":

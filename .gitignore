@@ -8,6 +8,7 @@ __pycache__/
 venv/
 logs/*.csv
 logs/*.log
+logs/*.json
 data/private/
 *.sqlite
 *.db

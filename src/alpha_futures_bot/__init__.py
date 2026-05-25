@@ -19,12 +19,14 @@ from alpha_futures_bot.models import (
 )
 from alpha_futures_bot.position import PositionDecision, PositionManager, PositionUpdate
 from alpha_futures_bot.regime import detect_regime
+from alpha_futures_bot.reporting import BacktestReport, build_backtest_report
 from alpha_futures_bot.risk import RiskDecision, evaluate_signal
 from alpha_futures_bot.strategy import generate_signal
 
 __all__ = [
     "BrokerBase",
     "BrokerError",
+    "BacktestReport",
     "BotConfig",
     "BotMode",
     "Candle",
@@ -47,6 +49,7 @@ __all__ = [
     "SignalAction",
     "Symbol",
     "calculate_indicators",
+    "build_backtest_report",
     "default_config",
     "detect_regime",
     "evaluate_signal",

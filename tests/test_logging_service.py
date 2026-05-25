@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import csv
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 from alpha_futures_bot.logging_service import SCAN_LOG_FIELDS, TRADE_LOG_FIELDS, SimulationLogger
 from alpha_futures_bot.models import ClosedPosition, Side, Symbol
+from alpha_futures_bot.reporting import build_backtest_report
 
 
 def test_creates_logs_directory_and_default_headers(tmp_path: Path) -> None:
     logs_dir = tmp_path / "logs"
 
-    SimulationLogger(logs_dir)
+    logger = SimulationLogger(logs_dir)
 
     assert (logs_dir / "scans.csv").exists()
     assert (logs_dir / "trades.csv").exists()
+    assert logger.summary_path == logs_dir / "summary.json"
     assert _header(logs_dir / "scans.csv") == list(SCAN_LOG_FIELDS)
     assert _header(logs_dir / "trades.csv") == list(TRADE_LOG_FIELDS)
     assert not (logs_dir / "scan_log.csv").exists()
@@ -60,6 +63,44 @@ def test_headers_do_not_include_secret_or_exchange_fields(tmp_path: Path) -> Non
     headers = _header(logger.scans_path) + _header(logger.trades_path)
 
     assert not [field for field in headers if any(fragment in field for fragment in forbidden)]
+
+
+def test_writes_valid_summary_json_and_converts_infinity(tmp_path: Path) -> None:
+    logger = SimulationLogger(tmp_path / "logs")
+    report = build_backtest_report(
+        total_candles=5,
+        starting_balance=1_000.0,
+        ending_balance=1_100.0,
+        ending_equity=1_100.0,
+        open_position_count=0,
+        closed_positions=[_closed_position()],
+        equity_curve=[1_000.0, 1_100.0],
+    )
+
+    logger.write_summary(report)
+
+    payload = json.loads(logger.summary_path.read_text(encoding="utf-8"))
+    assert payload["profit_factor"] == "Infinity"
+    assert payload["ending_equity"] == 1_100.0
+
+
+def test_summary_json_has_no_secret_or_exchange_fields(tmp_path: Path) -> None:
+    logger = SimulationLogger(tmp_path / "logs")
+    report = build_backtest_report(
+        total_candles=0,
+        starting_balance=1_000.0,
+        ending_balance=1_000.0,
+        ending_equity=1_000.0,
+        open_position_count=0,
+        closed_positions=[],
+        equity_curve=[],
+    )
+
+    logger.write_summary(report)
+
+    text = logger.summary_path.read_text(encoding="utf-8").lower()
+    for forbidden in ("api", "secret", "private", "key", "wallet", "exchange"):
+        assert forbidden not in text
 
 
 def _scan_row() -> dict[str, object]:
