@@ -67,6 +67,16 @@ V1 includes:
 - Signal score
 - Scan logging
 - Trade logging
+- Local historical BTC CSV support
+- Optional historical CSV metadata columns
+- Inclusive date range filtering
+- Multi-file local comparison
+- Reporting metrics
+- Summary and comparison JSON reports
+- Strategy presets
+- Preset comparison
+- Local historical CSV validation command
+- Historical data sanity report
 - Unit tests
 
 ---
@@ -112,7 +122,9 @@ The goal of V1 is to build a safe, testable BTC paper-trading bot that can:
 8. Pass the signal through a risk engine.
 9. Open, manage, and close paper positions.
 10. Log scans and paper trades.
-11. Pass unit tests.
+11. Produce local summary and comparison reports.
+12. Validate user-provided local BTC historical CSV files before backtests.
+13. Pass unit tests.
 
 ---
 

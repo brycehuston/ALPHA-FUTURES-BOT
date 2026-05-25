@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from alpha_futures_bot.data import DataError, filter_candles_by_date_range, load_candles_from_csv, parse_backtest_date
+from alpha_futures_bot.historical_validation import validate_historical_csv
 
 
 def test_optional_historical_metadata_columns_are_accepted_and_ignored(tmp_path: Path) -> None:
@@ -21,6 +22,23 @@ def test_optional_historical_metadata_columns_are_accepted_and_ignored(tmp_path:
     assert len(candles) == 1
     assert candles[0].symbol.value == "BTC"
     assert candles[0].close == 100.0
+
+
+def test_optional_historical_metadata_columns_are_reported_by_validation(tmp_path: Path) -> None:
+    rows = [
+        f"2024-01-{(index // 24) + 1:02d}T{index % 24:02d}:00:00+00:00,BTC,{100 + index},"
+        f"{101 + index},{99 + index},{100 + index},10,1h,manual"
+        for index in range(200)
+    ]
+    path = tmp_path / "historical.csv"
+    path.write_text("timestamp,symbol,open,high,low,close,volume,timeframe,source\n" + "\n".join(rows) + "\n")
+
+    report = validate_historical_csv(path)
+
+    assert report.has_optional_timeframe_column is True
+    assert report.timeframe_values_seen == ("1h",)
+    assert report.has_optional_source_column is True
+    assert report.source_values_seen == ("manual",)
 
 
 def test_malformed_historical_row_fails_without_skipping(tmp_path: Path) -> None:

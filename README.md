@@ -34,6 +34,18 @@ Run the offline test suite:
 python -m pytest -p no:cacheprovider --basetemp=.pytest_tmp
 ```
 
+Validate a user-provided local BTC historical CSV before running it:
+
+```powershell
+python -m alpha_futures_bot.runner --validate-csv data/history/btc_1h.csv
+```
+
+Validate an inclusive date range inside a local historical CSV:
+
+```powershell
+python -m alpha_futures_bot.runner --validate-csv data/history/btc_1h.csv --start 2024-01-01 --end 2024-12-31
+```
+
 Run the local paper simulation with synthetic BTC candles:
 
 ```powershell
@@ -64,7 +76,11 @@ Compare all local strategy presets on one BTC CSV:
 python -m alpha_futures_bot.runner --candles data/history/btc_1h.csv --logs logs --compare-presets
 ```
 
-Historical CSV files must include:
+## Real Local Historical CSV Files
+
+Put real BTC historical CSV files in `data/history/`. These files must be local and user-provided. The bot does not download data, fetch exchange data, call APIs, or fill missing candles. Large historical CSV files are git-ignored by default.
+
+Historical CSV files must include these columns:
 
 - `timestamp`
 - `symbol`
@@ -74,7 +90,18 @@ Historical CSV files must include:
 - `close`
 - `volume`
 
-Optional metadata columns such as `timeframe` or `source` may exist and are ignored in V1. Historical CSV files are user-provided local files only; the bot never downloads or fetches market data.
+Optional metadata columns are accepted safely and reported by validation:
+
+- `timeframe`
+- `source`
+
+Unknown extra columns are allowed and ignored. Validation rejects empty files, malformed timestamps, non-BTC symbols, duplicate timestamps, invalid OHLCV values, empty filtered date ranges, and files with fewer than 200 filtered candles.
+
+Validation status meanings:
+
+- `PASS`: the file is valid and backtest-ready.
+- `WARN`: the file is valid and backtest-ready, but sanity checks found concerns such as unsorted rows or irregular gaps.
+- `FAIL`: the file is invalid or not backtest-ready.
 
 Single-file simulations write:
 

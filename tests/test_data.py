@@ -42,14 +42,14 @@ def test_rejects_missing_required_columns(tmp_path: Path) -> None:
     path = tmp_path / "bad.csv"
     path.write_text("timestamp,symbol,open,high,low,close\n2026-01-01T00:00:00+00:00,BTC,100,101,99,100\n")
 
-    with pytest.raises(DataError):
+    with pytest.raises(DataError, match="Missing required columns: volume"):
         load_candles_from_csv(path)
 
 
 def test_rejects_non_btc_symbols(tmp_path: Path) -> None:
     path = _write_csv(tmp_path, ["2026-01-01T00:00:00+00:00,ETH,100,101,99,100,10"])
 
-    with pytest.raises(DataError):
+    with pytest.raises(DataError, match="Non-BTC symbol found at row 2: ETH"):
         load_candles_from_csv(path)
 
 
@@ -62,7 +62,7 @@ def test_rejects_duplicate_timestamps(tmp_path: Path) -> None:
         ],
     )
 
-    with pytest.raises(DataError):
+    with pytest.raises(DataError, match="Duplicate timestamp found: 2026-01-01T00:00:00\\+00:00"):
         load_candles_from_csv(path)
 
 
@@ -78,14 +78,22 @@ def test_rejects_duplicate_timestamps(tmp_path: Path) -> None:
 def test_rejects_invalid_ohlcv_values(tmp_path: Path, row: str) -> None:
     path = _write_csv(tmp_path, [row])
 
-    with pytest.raises(DataError):
+    with pytest.raises(DataError, match="Invalid OHLCV at row 2"):
         load_candles_from_csv(path)
 
 
 def test_rejects_malformed_timestamp(tmp_path: Path) -> None:
     path = _write_csv(tmp_path, ["not-a-date,BTC,100,101,99,100,10"])
 
-    with pytest.raises(DataError):
+    with pytest.raises(DataError, match="Invalid timestamp at row 2"):
+        load_candles_from_csv(path)
+
+
+def test_rejects_header_only_csv(tmp_path: Path) -> None:
+    path = tmp_path / "empty.csv"
+    path.write_text("timestamp,symbol,open,high,low,close,volume\n", encoding="utf-8")
+
+    with pytest.raises(DataError, match="Empty CSV: no candle rows found"):
         load_candles_from_csv(path)
 
 

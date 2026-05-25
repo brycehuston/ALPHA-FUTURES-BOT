@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -204,6 +205,58 @@ def test_cli_rejects_summary_name_for_multi_file_run(tmp_path: Path) -> None:
         )
 
 
+def test_cli_validate_csv_prints_summary_without_writing_logs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    csv_path = _write_validation_ready_csv(tmp_path)
+    logs_dir = tmp_path / "logs"
+
+    runner_main(["--validate-csv", str(csv_path), "--logs", str(logs_dir)])
+
+    output = capsys.readouterr().out
+    assert "CSV validation PASS: file=validation.csv" in output
+    assert "filtered_candle_count=200" in output
+    assert not logs_dir.exists()
+
+
+def test_cli_validate_csv_accepts_start_and_end(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    csv_path = _write_validation_ready_csv(tmp_path, count=240)
+
+    runner_main(
+        [
+            "--validate-csv",
+            str(csv_path),
+            "--start",
+            "2024-01-02",
+            "--end",
+            "2024-01-10",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert "CSV validation PASS: file=validation.csv" in output
+    assert "filtered_candle_count=216" in output
+    assert "filtered_first_timestamp=2024-01-02T00:00:00+00:00" in output
+    assert "filtered_last_timestamp=2024-01-10T23:00:00+00:00" in output
+
+
+def test_cli_validate_csv_rejects_candles_combo(tmp_path: Path) -> None:
+    csv_path = _write_validation_ready_csv(tmp_path)
+
+    with pytest.raises(DataError, match="--validate-csv cannot be combined with --candles"):
+        runner_main(["--validate-csv", str(csv_path), "--candles", str(csv_path)])
+
+
+def test_cli_validate_csv_rejects_compare_presets_combo(tmp_path: Path) -> None:
+    csv_path = _write_validation_ready_csv(tmp_path)
+
+    with pytest.raises(DataError, match="--validate-csv cannot be combined with --compare-presets"):
+        runner_main(["--validate-csv", str(csv_path), "--compare-presets"])
+
+
+def test_cli_requires_candles_without_validation_mode() -> None:
+    with pytest.raises(DataError, match="--candles is required unless --validate-csv is used"):
+        runner_main([])
+
+
 def test_runner_uses_position_manager_decision_not_direct_risk_call() -> None:
     source = Path("src/alpha_futures_bot/runner.py").read_text(encoding="utf-8")
 
@@ -257,6 +310,30 @@ def _write_trade_simulation_csv(tmp_path: Path) -> Path:
             )
         )
     path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def _write_validation_ready_csv(tmp_path: Path, *, count: int = 200) -> Path:
+    base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    lines = ["timestamp,symbol,open,high,low,close,volume"]
+    for index in range(count):
+        timestamp = base + timedelta(hours=index)
+        price = 100 + index
+        lines.append(
+            ",".join(
+                [
+                    timestamp.isoformat(),
+                    "BTC",
+                    str(price),
+                    str(price + 1),
+                    str(price - 1),
+                    str(price),
+                    "10",
+                ]
+            )
+        )
+    path = tmp_path / "validation.csv"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 

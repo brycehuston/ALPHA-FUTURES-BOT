@@ -12,6 +12,7 @@ from typing import Sequence
 from alpha_futures_bot.broker import PaperBroker
 from alpha_futures_bot.config import BotConfig, default_config
 from alpha_futures_bot.data import DataError, filter_candles_by_date_range, load_candles_from_csv, parse_backtest_date
+from alpha_futures_bot.historical_validation import HistoricalDataReport, validate_historical_csv
 from alpha_futures_bot.indicators import calculate_indicators
 from alpha_futures_bot.logging_service import SimulationLogger
 from alpha_futures_bot.models import Candle, Regime, Signal
@@ -202,7 +203,8 @@ def run_preset_comparison(
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run an offline BTC paper simulation.")
-    parser.add_argument("--candles", nargs="+", required=True, help="One or more local BTC candle CSV paths.")
+    parser.add_argument("--candles", nargs="+", help="One or more local BTC candle CSV paths.")
+    parser.add_argument("--validate-csv", help="Validate one local BTC historical CSV without writing logs.")
     parser.add_argument("--logs", default="logs", help="Directory for local scans.csv and trades.csv logs.")
     parser.add_argument("--start", help="Optional inclusive start date in YYYY-MM-DD format.")
     parser.add_argument("--end", help="Optional inclusive end date in YYYY-MM-DD format.")
@@ -211,6 +213,21 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--preset", choices=PRESET_NAMES, default="balanced", help="Local strategy preset.")
     parser.add_argument("--compare-presets", action="store_true", help="Compare all local strategy presets on one CSV.")
     args = parser.parse_args(argv)
+
+    if args.validate_csv:
+        if args.candles:
+            raise DataError("--validate-csv cannot be combined with --candles")
+        if args.compare_presets:
+            raise DataError("--validate-csv cannot be combined with --compare-presets")
+        start_date = parse_backtest_date(args.start)
+        end_date = parse_backtest_date(args.end)
+        report = validate_historical_csv(args.validate_csv, start=start_date, end=end_date)
+        for line in _validation_report_lines(report):
+            print(line)
+        return
+
+    if not args.candles:
+        raise DataError("--candles is required unless --validate-csv is used")
 
     if args.compare_presets:
         if len(args.candles) != 1:
@@ -278,6 +295,37 @@ def _simulation_line(summary: SimulationSummary) -> str:
     )
 
 
+def _validation_report_lines(report: HistoricalDataReport) -> tuple[str, ...]:
+    return (
+        f"CSV validation {report.status}: file={report.file_name}",
+        f"total_rows={report.total_rows}",
+        f"valid_candle_count={report.valid_candle_count}",
+        f"filtered_candle_count={report.filtered_candle_count}",
+        f"first_timestamp={report.first_timestamp}",
+        f"last_timestamp={report.last_timestamp}",
+        f"filtered_first_timestamp={report.filtered_first_timestamp}",
+        f"filtered_last_timestamp={report.filtered_last_timestamp}",
+        f"date_range_days={report.date_range_days}",
+        f"symbol={report.symbol}",
+        f"has_optional_timeframe_column={report.has_optional_timeframe_column}",
+        f"timeframe_values_seen={_format_values(report.timeframe_values_seen)}",
+        f"has_optional_source_column={report.has_optional_source_column}",
+        f"source_values_seen={_format_values(report.source_values_seen)}",
+        f"duplicate_timestamp_count={report.duplicate_timestamp_count}",
+        f"sorted_ascending={report.sorted_ascending}",
+        f"minimum_close={report.minimum_close:.8f}",
+        f"maximum_close={report.maximum_close:.8f}",
+        f"minimum_volume={report.minimum_volume:.8f}",
+        f"maximum_volume={report.maximum_volume:.8f}",
+        f"enough_for_ema_200={report.enough_for_ema_200}",
+        f"detected_interval_seconds={_format_optional_int(report.detected_interval_seconds)}",
+        f"irregular_gap_count={report.irregular_gap_count}",
+        f"largest_gap_seconds={_format_optional_int(report.largest_gap_seconds)}",
+        f"warnings={_format_values(report.warnings)}",
+        f"reasons={_format_values(report.reasons)}",
+    )
+
+
 def _date_label(value: str | date | None) -> str:
     parsed = parse_backtest_date(value) if isinstance(value, str) or value is None else value
     return parsed.isoformat() if parsed else ""
@@ -336,6 +384,14 @@ def _format_float(value: float) -> str:
     if value == float("-inf"):
         return "-Infinity"
     return f"{value:.2f}"
+
+
+def _format_optional_int(value: int | None) -> str:
+    return "" if value is None else str(value)
+
+
+def _format_values(values: Sequence[str]) -> str:
+    return ",".join(values)
 
 
 if __name__ == "__main__":

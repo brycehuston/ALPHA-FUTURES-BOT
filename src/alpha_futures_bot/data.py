@@ -30,17 +30,19 @@ def load_candles_from_csv(path: str | Path) -> list[Candle]:
             raise DataError("Candle CSV is missing a header row")
         missing_columns = set(REQUIRED_CANDLE_COLUMNS) - set(reader.fieldnames)
         if missing_columns:
-            raise DataError("Candle CSV is missing required V1 columns")
+            raise DataError(f"Missing required columns: {_format_missing_columns(missing_columns)}")
 
         candles: list[Candle] = []
         seen_timestamps: set[datetime] = set()
         for row_number, row in enumerate(reader, start=2):
-            candle = _parse_row(row, row_number)
+            candle = parse_candle_row(row, row_number)
             if candle.timestamp in seen_timestamps:
-                raise DataError(f"Duplicate candle timestamp on row {row_number}")
+                raise DataError(f"Duplicate timestamp found: {candle.timestamp.isoformat()}")
             seen_timestamps.add(candle.timestamp)
             candles.append(candle)
 
+    if not candles:
+        raise DataError("Empty CSV: no candle rows found")
     return sorted(candles, key=lambda candle: candle.timestamp)
 
 
@@ -74,19 +76,21 @@ def filter_candles_by_date_range(
         and (end is None or candle.timestamp.date() <= end)
     ]
     if not filtered:
-        raise DataError("Backtest date range produced no candles")
+        raise DataError("Empty CSV after date filtering")
     return sorted(filtered, key=lambda candle: candle.timestamp)
 
 
-def _parse_row(row: dict[str, str], row_number: int) -> Candle:
+def parse_candle_row(row: dict[str, str], row_number: int) -> Candle:
+    """Parse one local BTC candle CSV row, failing closed on malformed values."""
+
     try:
         timestamp = datetime.fromisoformat(row["timestamp"])
     except (TypeError, ValueError) as exc:
-        raise DataError(f"Invalid timestamp on row {row_number}") from exc
+        raise DataError(f"Invalid timestamp at row {row_number}") from exc
 
-    symbol = row["symbol"].strip().upper()
+    symbol = (row["symbol"] or "").strip().upper()
     if symbol != Symbol.BTC.value:
-        raise DataError(f"Unsupported symbol on row {row_number}")
+        raise DataError(f"Non-BTC symbol found at row {row_number}: {symbol}")
 
     open_price = _parse_float(row["open"], "open", row_number)
     high = _parse_float(row["high"], "high", row_number)
@@ -110,20 +114,25 @@ def _parse_float(value: str, name: str, row_number: int) -> float:
     try:
         parsed = float(value)
     except (TypeError, ValueError) as exc:
-        raise DataError(f"Invalid {name} on row {row_number}") from exc
+        raise DataError(f"Invalid OHLCV at row {row_number}: {name} is not a number") from exc
     if not isfinite(parsed):
-        raise DataError(f"Invalid {name} on row {row_number}")
+        raise DataError(f"Invalid OHLCV at row {row_number}: {name} is not a finite number")
     return parsed
 
 
 def _validate_ohlcv(open_price: float, high: float, low: float, close: float, volume: float, row_number: int) -> None:
     if min(open_price, high, low, close) <= 0:
-        raise DataError(f"OHLC prices must be greater than zero on row {row_number}")
+        raise DataError(f"Invalid OHLCV at row {row_number}: OHLC prices must be greater than zero")
     if volume < 0:
-        raise DataError(f"Volume must be non-negative on row {row_number}")
+        raise DataError(f"Invalid OHLCV at row {row_number}: volume is negative")
     if high < low:
-        raise DataError(f"High must be greater than or equal to low on row {row_number}")
+        raise DataError(f"Invalid OHLCV at row {row_number}: high is below low")
     if high < max(open_price, close):
-        raise DataError(f"High must cover open and close on row {row_number}")
+        raise DataError(f"Invalid OHLCV at row {row_number}: high is below open or close")
     if low > min(open_price, close):
-        raise DataError(f"Low must cover open and close on row {row_number}")
+        raise DataError(f"Invalid OHLCV at row {row_number}: low is above open or close")
+
+
+def _format_missing_columns(missing_columns: set[str]) -> str:
+    ordered = [column for column in REQUIRED_CANDLE_COLUMNS if column in missing_columns]
+    return ", ".join(ordered)
