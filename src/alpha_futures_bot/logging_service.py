@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import csv
 import json
-from dataclasses import asdict, is_dataclass
 from collections.abc import Mapping
+from dataclasses import asdict, is_dataclass
 from math import isfinite, isnan
 from pathlib import Path
 from typing import Any
@@ -51,15 +51,24 @@ class LoggingError(ValueError):
 class SimulationLogger:
     """CSV logger that writes local scan and trade rows only."""
 
-    def __init__(self, logs_dir: str | Path = "logs") -> None:
+    def __init__(
+        self,
+        logs_dir: str | Path = "logs",
+        summary_name: str = "summary.json",
+        initialize_csv: bool = True,
+    ) -> None:
         self.logs_dir = Path(logs_dir)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.scans_path = self.logs_dir / "scans.csv"
         self.trades_path = self.logs_dir / "trades.csv"
-        self.summary_path = self.logs_dir / "summary.json"
-        self._ensure_file(self.scans_path, SCAN_LOG_FIELDS)
-        self._ensure_file(self.trades_path, TRADE_LOG_FIELDS)
-        self._trade_keys = self._load_trade_keys()
+        self.summary_path = self.logs_dir / _sanitize_summary_name(summary_name)
+        self.comparison_path = self.logs_dir / "comparison.json"
+        if initialize_csv:
+            self._ensure_file(self.scans_path, SCAN_LOG_FIELDS)
+            self._ensure_file(self.trades_path, TRADE_LOG_FIELDS)
+            self._trade_keys = self._load_trade_keys()
+        else:
+            self._trade_keys: set[tuple[str, ...]] = set()
 
     def log_scan(self, row: Mapping[str, Any]) -> None:
         self._append_row(self.scans_path, SCAN_LOG_FIELDS, row)
@@ -86,10 +95,10 @@ class SimulationLogger:
         return True
 
     def write_summary(self, report: Any) -> None:
-        payload = asdict(report) if is_dataclass(report) else dict(report)
-        with self.summary_path.open("w", encoding="utf-8") as handle:
-            json.dump(_json_safe(payload), handle, indent=2, sort_keys=True, allow_nan=False)
-            handle.write("\n")
+        self._write_json(self.summary_path, report)
+
+    def write_comparison(self, report: Any) -> None:
+        self._write_json(self.comparison_path, report)
 
     def _ensure_file(self, path: Path, fields: tuple[str, ...]) -> None:
         if path.exists():
@@ -123,6 +132,28 @@ class SimulationLogger:
             str(row["exit_price"]),
             str(row["close_reason"]),
         )
+
+    def _write_json(self, path: Path, payload: Any) -> None:
+        data = asdict(payload) if is_dataclass(payload) else dict(payload)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(_json_safe(data), handle, indent=2, sort_keys=True, allow_nan=False)
+            handle.write("\n")
+
+
+def _sanitize_summary_name(summary_name: str) -> str:
+    candidate = Path(summary_name)
+    if (
+        not summary_name
+        or "/" in summary_name
+        or "\\" in summary_name
+        or ".." in candidate.parts
+        or candidate.name != summary_name
+        or candidate.is_absolute()
+        or summary_name in {".", ".."}
+        or not summary_name.endswith(".json")
+    ):
+        raise LoggingError("Summary name must be a local .json filename")
+    return summary_name
 
 
 def _json_safe(value: Any) -> Any:

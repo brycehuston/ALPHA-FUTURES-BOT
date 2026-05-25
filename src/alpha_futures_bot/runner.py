@@ -3,23 +3,33 @@
 from __future__ import annotations
 
 import argparse
+import re
+from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
 from alpha_futures_bot.broker import PaperBroker
-from alpha_futures_bot.data import load_candles_from_csv
+from alpha_futures_bot.data import DataError, filter_candles_by_date_range, load_candles_from_csv, parse_backtest_date
 from alpha_futures_bot.indicators import calculate_indicators
 from alpha_futures_bot.logging_service import SimulationLogger
 from alpha_futures_bot.models import Candle, Regime, Signal
 from alpha_futures_bot.position import PositionDecision, PositionManager
 from alpha_futures_bot.regime import detect_regime
-from alpha_futures_bot.reporting import BacktestReport, build_backtest_report
+from alpha_futures_bot.reporting import (
+    BacktestComparisonReport,
+    BacktestComparisonRow,
+    BacktestReport,
+    build_backtest_report,
+    build_comparison_report,
+    build_comparison_row,
+)
 from alpha_futures_bot.strategy import generate_signal
 
 
 @dataclass(frozen=True, slots=True)
 class SimulationSummary:
+    source_file: str
     total_candles: int
     starting_balance: float
     ending_cash_balance: float
@@ -30,15 +40,26 @@ class SimulationSummary:
     report: BacktestReport
 
 
+@dataclass(frozen=True, slots=True)
+class MultiSimulationSummary:
+    summaries: tuple[SimulationSummary, ...]
+    comparison: BacktestComparisonReport
+
+
 def run_simulation(
     candle_csv: str | Path,
     logs_dir: str | Path = "logs",
     starting_balance: float = 10_000.0,
+    start: str | date | None = None,
+    end: str | date | None = None,
+    summary_name: str = "summary.json",
 ) -> SimulationSummary:
-    candles = load_candles_from_csv(candle_csv)
+    start_date = parse_backtest_date(start) if isinstance(start, str) or start is None else start
+    end_date = parse_backtest_date(end) if isinstance(end, str) or end is None else end
+    candles = filter_candles_by_date_range(load_candles_from_csv(candle_csv), start_date, end_date)
     broker = PaperBroker(starting_balance=starting_balance)
     manager = PositionManager(broker)
-    logger = SimulationLogger(logs_dir)
+    logger = SimulationLogger(logs_dir, summary_name=summary_name)
     scans_written = 0
     equity_curve: list[float] = []
 
@@ -82,6 +103,7 @@ def run_simulation(
     logger.write_summary(report)
 
     return SimulationSummary(
+        source_file=Path(candle_csv).name,
         total_candles=len(candles),
         starting_balance=float(starting_balance),
         ending_cash_balance=broker.cash_balance,
@@ -93,16 +115,87 @@ def run_simulation(
     )
 
 
+def run_simulation_comparison(
+    candle_csvs: Sequence[str | Path],
+    logs_dir: str | Path = "logs",
+    starting_balance: float = 10_000.0,
+    start: str | date | None = None,
+    end: str | date | None = None,
+) -> MultiSimulationSummary:
+    if len(candle_csvs) < 2:
+        raise DataError("Comparison requires at least two local candle CSV files")
+
+    root_logs_dir = Path(logs_dir)
+    stems = _safe_run_stems(candle_csvs)
+    summaries: list[SimulationSummary] = []
+    rows: list[BacktestComparisonRow] = []
+    start_label = _date_label(start)
+    end_label = _date_label(end)
+
+    for candle_csv, stem in zip(candle_csvs, stems):
+        summary = run_simulation(
+            candle_csv,
+            root_logs_dir / "runs" / stem,
+            starting_balance=starting_balance,
+            start=start,
+            end=end,
+        )
+        summaries.append(summary)
+        rows.append(
+            build_comparison_row(
+                file_name=Path(candle_csv).name,
+                start_date=start_label,
+                end_date=end_label,
+                report=summary.report,
+            )
+        )
+
+    comparison = build_comparison_report(rows)
+    SimulationLogger(root_logs_dir, initialize_csv=False).write_comparison(comparison)
+    return MultiSimulationSummary(summaries=tuple(summaries), comparison=comparison)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run an offline BTC paper simulation.")
-    parser.add_argument("--candles", required=True, help="Path to local BTC candle CSV.")
+    parser.add_argument("--candles", nargs="+", required=True, help="One or more local BTC candle CSV paths.")
     parser.add_argument("--logs", default="logs", help="Directory for local scans.csv and trades.csv logs.")
+    parser.add_argument("--start", help="Optional inclusive start date in YYYY-MM-DD format.")
+    parser.add_argument("--end", help="Optional inclusive end date in YYYY-MM-DD format.")
     parser.add_argument("--starting-balance", type=float, default=10_000.0)
+    parser.add_argument("--summary-name", default="summary.json", help="Single-run summary JSON filename.")
     args = parser.parse_args(argv)
 
-    summary = run_simulation(args.candles, args.logs, args.starting_balance)
-    print(
+    if len(args.candles) == 1:
+        summary = run_simulation(
+            args.candles[0],
+            args.logs,
+            args.starting_balance,
+            start=args.start,
+            end=args.end,
+            summary_name=args.summary_name,
+        )
+        print(_simulation_line(summary))
+        return
+
+    if args.summary_name != "summary.json":
+        raise DataError("--summary-name is only supported for single-file runs")
+
+    comparison = run_simulation_comparison(
+        args.candles,
+        args.logs,
+        args.starting_balance,
+        start=args.start,
+        end=args.end,
+    )
+    print(f"Comparison complete: runs={comparison.comparison.total_runs}")
+    for summary in comparison.summaries:
+        print(_simulation_line(summary))
+
+
+def _simulation_line(summary: SimulationSummary) -> str:
+    return (
         "Simulation complete: "
+        f"file={summary.source_file}, "
         f"candles={summary.total_candles}, "
         f"starting_balance={summary.starting_balance:.2f}, "
         f"ending_cash_balance={summary.ending_cash_balance:.2f}, "
@@ -116,6 +209,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"closed_trades={summary.closed_trade_count}, "
         f"scans={summary.scans_written}"
     )
+
+
+def _date_label(value: str | date | None) -> str:
+    parsed = parse_backtest_date(value) if isinstance(value, str) or value is None else value
+    return parsed.isoformat() if parsed else ""
+
+
+def _safe_run_stems(candle_csvs: Sequence[str | Path]) -> tuple[str, ...]:
+    counts: dict[str, int] = {}
+    stems: list[str] = []
+    for candle_csv in candle_csvs:
+        base = Path(candle_csv).stem
+        safe = re.sub(r"[^A-Za-z0-9_-]+", "_", base).strip("_").lower() or "candles"
+        counts[safe] = counts.get(safe, 0) + 1
+        if counts[safe] > 1:
+            safe = f"{safe}_{counts[safe]}"
+        stems.append(safe)
+    return tuple(stems)
 
 
 def _scan_row(

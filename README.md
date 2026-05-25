@@ -40,11 +40,37 @@ Run the local paper simulation with synthetic BTC candles:
 python -m alpha_futures_bot.runner --candles data/sample_btc_candles.csv --logs logs
 ```
 
-The simulation writes local CSV logs only:
+Run a local historical BTC CSV over an inclusive date range:
+
+```powershell
+python -m alpha_futures_bot.runner --candles data/history/btc_1h.csv --logs logs --start 2024-01-01 --end 2024-12-31
+```
+
+Compare multiple local BTC CSV files:
+
+```powershell
+python -m alpha_futures_bot.runner --candles data/history/btc_2023.csv data/history/btc_2024.csv --logs logs
+```
+
+Historical CSV files must include:
+
+- `timestamp`
+- `symbol`
+- `open`
+- `high`
+- `low`
+- `close`
+- `volume`
+
+Optional metadata columns such as `timeframe` or `source` may exist and are ignored in V1. Historical CSV files are user-provided local files only; the bot never downloads or fetches market data.
+
+Single-file simulations write:
 
 - `logs/scans.csv`
 - `logs/trades.csv`
 - `logs/summary.json`
+
+Multi-file comparisons write isolated per-run logs under `logs/runs/<safe_file_stem>/` and a combined `logs/comparison.json`.
 
 The summary report includes return percentage, win rate, profit factor, max drawdown, equity high/low, average trade PnL, and best/worst trade.
 

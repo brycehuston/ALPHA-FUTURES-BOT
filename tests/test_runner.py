@@ -4,7 +4,12 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
+from alpha_futures_bot.data import DataError
 from alpha_futures_bot.runner import SimulationSummary, run_simulation
+from alpha_futures_bot.runner import main as runner_main
+from alpha_futures_bot.runner import run_simulation_comparison
 
 
 def test_full_offline_simulation_writes_logs_and_summary(tmp_path: Path) -> None:
@@ -29,6 +34,52 @@ def test_full_offline_simulation_writes_logs_and_summary(tmp_path: Path) -> None
     assert "profit_factor" in payload
 
 
+def test_single_run_can_write_sanitized_custom_summary_name(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+    logs_dir = tmp_path / "logs"
+
+    run_simulation(csv_path, logs_dir, summary_name="custom_summary.json")
+
+    assert (logs_dir / "custom_summary.json").exists()
+    assert not (logs_dir / "summary.json").exists()
+
+
+def test_single_run_rejects_unsafe_summary_names(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+
+    for unsafe in ("../summary.json", r"..\summary.json", "nested/summary.json", "summary.txt"):
+        with pytest.raises(ValueError):
+            run_simulation(csv_path, tmp_path / "logs", summary_name=unsafe)
+
+
+def test_filtered_run_reports_reduced_candle_count(tmp_path: Path) -> None:
+    csv_path = tmp_path / "dates.csv"
+    csv_path.write_text(
+        "timestamp,symbol,open,high,low,close,volume\n"
+        "2024-01-01T00:00:00+00:00,BTC,100,101,99,100,10\n"
+        "2024-01-02T00:00:00+00:00,BTC,101,102,100,101,10\n"
+        "2024-01-03T00:00:00+00:00,BTC,102,103,101,102,10\n",
+        encoding="utf-8",
+    )
+
+    summary = run_simulation(csv_path, tmp_path / "logs", start="2024-01-02", end="2024-01-03")
+
+    assert summary.total_candles == 2
+    assert summary.scans_written == 2
+
+
+def test_filtered_run_rejects_empty_date_range(tmp_path: Path) -> None:
+    csv_path = tmp_path / "dates.csv"
+    csv_path.write_text(
+        "timestamp,symbol,open,high,low,close,volume\n"
+        "2024-01-01T00:00:00+00:00,BTC,100,101,99,100,10\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DataError):
+        run_simulation(csv_path, tmp_path / "logs", start="2025-01-01")
+
+
 def test_runner_handles_short_history_without_crashing(tmp_path: Path) -> None:
     csv_path = tmp_path / "short.csv"
     csv_path.write_text(
@@ -46,6 +97,43 @@ def test_runner_handles_short_history_without_crashing(tmp_path: Path) -> None:
     assert summary.report.win_rate == 0.0
     payload = json.loads((tmp_path / "logs" / "summary.json").read_text(encoding="utf-8"))
     assert payload["total_closed_trades"] == 0
+
+
+def test_multi_file_comparison_runs_independently_and_writes_isolated_logs(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+    logs_dir = tmp_path / "logs"
+
+    summary = run_simulation_comparison([csv_path, csv_path], logs_dir)
+
+    assert summary.comparison.total_runs == 2
+    assert len(summary.summaries) == 2
+    assert (logs_dir / "comparison.json").exists()
+    assert (logs_dir / "runs" / "simulation" / "scans.csv").exists()
+    assert (logs_dir / "runs" / "simulation" / "trades.csv").exists()
+    assert (logs_dir / "runs" / "simulation" / "summary.json").exists()
+    assert (logs_dir / "runs" / "simulation_2" / "summary.json").exists()
+    assert not (logs_dir / "scans.csv").exists()
+    assert not (logs_dir / "trades.csv").exists()
+    payload = json.loads((logs_dir / "comparison.json").read_text(encoding="utf-8"))
+    assert payload["total_runs"] == 2
+    assert payload["rows"][0]["file_name"] == "simulation.csv"
+
+
+def test_cli_rejects_summary_name_for_multi_file_run(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+
+    with pytest.raises(DataError):
+        runner_main(
+            [
+                "--candles",
+                str(csv_path),
+                str(csv_path),
+                "--logs",
+                str(tmp_path / "logs"),
+                "--summary-name",
+                "custom.json",
+            ]
+        )
 
 
 def test_runner_uses_position_manager_decision_not_direct_risk_call() -> None:

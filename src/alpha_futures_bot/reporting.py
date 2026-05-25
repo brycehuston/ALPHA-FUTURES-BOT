@@ -33,6 +33,30 @@ class BacktestReport:
     average_trade_pnl: float
 
 
+@dataclass(frozen=True, slots=True)
+class BacktestComparisonRow:
+    file_name: str
+    start_date: str
+    end_date: str
+    total_candles: int
+    total_closed_trades: int
+    starting_balance: float
+    ending_equity: float
+    realized_pnl: float
+    return_percentage: float
+    win_rate: float
+    profit_factor: float
+    max_drawdown: float
+    best_trade: float
+    worst_trade: float
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestComparisonReport:
+    total_runs: int
+    rows: tuple[BacktestComparisonRow, ...]
+
+
 def build_backtest_report(
     *,
     total_candles: int,
@@ -79,6 +103,35 @@ def build_backtest_report(
         equity_low=equity_low,
         average_trade_pnl=(realized_pnl / total_closed_trades) if total_closed_trades else 0.0,
     )
+
+
+def build_comparison_row(
+    *,
+    file_name: str,
+    start_date: str,
+    end_date: str,
+    report: BacktestReport,
+) -> BacktestComparisonRow:
+    return BacktestComparisonRow(
+        file_name=file_name,
+        start_date=start_date,
+        end_date=end_date,
+        total_candles=report.total_candles,
+        total_closed_trades=report.total_closed_trades,
+        starting_balance=report.starting_balance,
+        ending_equity=report.ending_equity,
+        realized_pnl=report.realized_pnl,
+        return_percentage=report.return_percentage,
+        win_rate=report.win_rate,
+        profit_factor=report.profit_factor,
+        max_drawdown=report.max_drawdown,
+        best_trade=report.best_trade,
+        worst_trade=report.worst_trade,
+    )
+
+
+def build_comparison_report(rows: Sequence[BacktestComparisonRow]) -> BacktestComparisonReport:
+    return BacktestComparisonReport(total_runs=len(rows), rows=tuple(rows))
 
 
 def _profit_factor(wins: Sequence[float], losses: Sequence[float]) -> float:

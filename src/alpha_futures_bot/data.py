@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import date, datetime
 from math import isfinite
 from pathlib import Path
+from typing import Sequence
 
 from alpha_futures_bot.models import Candle, Symbol
 
@@ -27,8 +28,9 @@ def load_candles_from_csv(path: str | Path) -> list[Candle]:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             raise DataError("Candle CSV is missing a header row")
-        if tuple(reader.fieldnames) != REQUIRED_CANDLE_COLUMNS:
-            raise DataError("Candle CSV columns must match required V1 schema")
+        missing_columns = set(REQUIRED_CANDLE_COLUMNS) - set(reader.fieldnames)
+        if missing_columns:
+            raise DataError("Candle CSV is missing required V1 columns")
 
         candles: list[Candle] = []
         seen_timestamps: set[datetime] = set()
@@ -40,6 +42,40 @@ def load_candles_from_csv(path: str | Path) -> list[Candle]:
             candles.append(candle)
 
     return sorted(candles, key=lambda candle: candle.timestamp)
+
+
+def parse_backtest_date(value: str | None) -> date | None:
+    """Parse an optional YYYY-MM-DD backtest date, failing closed on malformed input."""
+
+    if value is None:
+        return None
+    if len(value) != 10 or value[4] != "-" or value[7] != "-":
+        raise DataError("Backtest dates must use YYYY-MM-DD format")
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise DataError("Backtest dates must use YYYY-MM-DD format") from exc
+
+
+def filter_candles_by_date_range(
+    candles: Sequence[Candle],
+    start: date | None = None,
+    end: date | None = None,
+) -> list[Candle]:
+    """Return candles inside inclusive calendar-date boundaries."""
+
+    if start is not None and end is not None and start > end:
+        raise DataError("Backtest start date must be before or equal to end date")
+
+    filtered = [
+        candle
+        for candle in candles
+        if (start is None or candle.timestamp.date() >= start)
+        and (end is None or candle.timestamp.date() <= end)
+    ]
+    if not filtered:
+        raise DataError("Backtest date range produced no candles")
+    return sorted(filtered, key=lambda candle: candle.timestamp)
 
 
 def _parse_row(row: dict[str, str], row_number: int) -> Candle:

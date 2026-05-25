@@ -9,8 +9,14 @@ venv/
 logs/*.csv
 logs/*.log
 logs/*.json
+logs/**/*.csv
+logs/**/*.log
+logs/**/*.json
 data/private/
+data/history/*.csv
+!data/history/.gitkeep
 *.sqlite
 *.db
 .DS_Store
 .pytest_tmp/
+.pytest_runtime_tmp/

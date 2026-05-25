@@ -5,7 +5,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from alpha_futures_bot.logging_service import SCAN_LOG_FIELDS, TRADE_LOG_FIELDS, SimulationLogger
+import pytest
+
+from alpha_futures_bot.logging_service import LoggingError, SCAN_LOG_FIELDS, TRADE_LOG_FIELDS, SimulationLogger
 from alpha_futures_bot.models import ClosedPosition, Side, Symbol
 from alpha_futures_bot.reporting import build_backtest_report
 
@@ -82,6 +84,36 @@ def test_writes_valid_summary_json_and_converts_infinity(tmp_path: Path) -> None
     payload = json.loads(logger.summary_path.read_text(encoding="utf-8"))
     assert payload["profit_factor"] == "Infinity"
     assert payload["ending_equity"] == 1_100.0
+
+
+def test_custom_summary_name_must_be_safe_local_json_filename(tmp_path: Path) -> None:
+    logger = SimulationLogger(tmp_path / "logs", summary_name="safe_summary.json")
+
+    assert logger.summary_path == tmp_path / "logs" / "safe_summary.json"
+
+    for unsafe in ("../summary.json", r"..\summary.json", "nested/summary.json", "C:/tmp/summary.json", "summary.txt", ""):
+        with pytest.raises(LoggingError):
+            SimulationLogger(tmp_path / "logs", summary_name=unsafe)
+
+
+def test_write_comparison_does_not_require_root_scan_trade_logs(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logger = SimulationLogger(logs_dir, initialize_csv=False)
+    report = build_backtest_report(
+        total_candles=0,
+        starting_balance=1_000.0,
+        ending_balance=1_000.0,
+        ending_equity=1_000.0,
+        open_position_count=0,
+        closed_positions=[],
+        equity_curve=[],
+    )
+
+    logger.write_comparison({"total_runs": 1, "rows": [{"file_name": "btc.csv", "profit_factor": report.profit_factor}]})
+
+    assert (logs_dir / "comparison.json").exists()
+    assert not (logs_dir / "scans.csv").exists()
+    assert not (logs_dir / "trades.csv").exists()
 
 
 def test_summary_json_has_no_secret_or_exchange_fields(tmp_path: Path) -> None:
