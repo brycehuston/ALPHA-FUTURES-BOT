@@ -2,7 +2,9 @@
 
 from alpha_futures_bot.broker import BrokerBase, BrokerError, PaperBroker
 from alpha_futures_bot.config import BotConfig, ConfigError, RiskSettings, default_config, load_config
+from alpha_futures_bot.data import DataError, load_candles_from_csv
 from alpha_futures_bot.indicators import IndicatorSnapshot, calculate_indicators
+from alpha_futures_bot.logging_service import SimulationLogger
 from alpha_futures_bot.models import (
     BotMode,
     Candle,
@@ -28,6 +30,7 @@ __all__ = [
     "Candle",
     "ClosedPosition",
     "ConfigError",
+    "DataError",
     "IndicatorSnapshot",
     "OrderRequest",
     "PaperBroker",
@@ -39,6 +42,7 @@ __all__ = [
     "RiskDecision",
     "RiskSettings",
     "Side",
+    "SimulationLogger",
     "Signal",
     "SignalAction",
     "Symbol",
@@ -47,5 +51,6 @@ __all__ = [
     "detect_regime",
     "evaluate_signal",
     "generate_signal",
+    "load_candles_from_csv",
     "load_config",
 ]
