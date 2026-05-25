@@ -42,7 +42,7 @@ class RiskSettings:
 
     max_position_notional: float = 1_000.0
     max_risk_per_trade_pct: float = 1.0
-    min_signal_score: float = 0.65
+    min_signal_score: float = 70.0
     max_leverage: float = 1.0
 
 
@@ -147,8 +147,8 @@ def _validate_risk(risk: RiskSettings) -> None:
         raise ConfigError("max_position_notional must be greater than 0")
     if not 0 < risk.max_risk_per_trade_pct <= 100:
         raise ConfigError("max_risk_per_trade_pct must be in the range (0, 100]")
-    if not 0 <= risk.min_signal_score <= 1:
-        raise ConfigError("min_signal_score must be in the range [0, 1]")
+    if not 0 <= risk.min_signal_score <= 100:
+        raise ConfigError("min_signal_score must be in the range [0, 100]")
     if risk.max_leverage != 1.0:
         raise ConfigError("max_leverage must remain 1.0 in V1")
 

@@ -14,6 +14,7 @@ def test_default_config_validates() -> None:
     assert config.mode is BotMode.PAPER
     assert config.symbol is Symbol.BTC
     assert isinstance(config.risk, RiskSettings)
+    assert config.risk.min_signal_score == 70.0
 
 
 @pytest.mark.parametrize("mode", ["PAPER", "TEST", BotMode.PAPER, BotMode.TEST])
@@ -106,7 +107,7 @@ def test_missing_top_level_risk_fails(valid_config_dict) -> None:
         ("max_risk_per_trade_pct", 0),
         ("max_risk_per_trade_pct", 101),
         ("min_signal_score", -0.01),
-        ("min_signal_score", 1.01),
+        ("min_signal_score", 100.01),
         ("max_leverage", 2.0),
         ("max_leverage", 0.0),
     ],
