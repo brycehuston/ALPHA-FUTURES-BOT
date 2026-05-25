@@ -12,3 +12,4 @@ data/private/
 *.sqlite
 *.db
 .DS_Store
+.pytest_tmp/
