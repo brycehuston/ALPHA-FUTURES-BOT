@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from alpha_futures_bot.models import Candle, Symbol
+from alpha_futures_bot.models import Candle, OrderRequest, Side, Signal, SignalAction, Symbol
 
 
 @pytest.fixture
@@ -18,10 +18,12 @@ def valid_config_dict() -> Callable[[], dict[str, Any]]:
             "mode": "PAPER",
             "symbol": "BTC",
             "risk": {
-                "max_position_notional": 1_000.0,
-                "max_risk_per_trade_pct": 1.0,
+                "max_position_notional": 10_000.0,
+                "max_risk_per_trade_pct": 0.005,
                 "min_signal_score": 70.0,
                 "max_leverage": 1.0,
+                "daily_max_loss_pct": 0.02,
+                "max_open_positions": 1,
             },
         }
 
@@ -78,3 +80,51 @@ def make_flat_candles() -> list[Candle]:
 
 def make_too_short_candles() -> list[Candle]:
     return [make_candle(index, 100.0 + index, 100.0) for index in range(199)]
+
+
+def make_long_signal() -> Signal:
+    return Signal(
+        symbol=Symbol.BTC,
+        action=SignalAction.BUY,
+        side=Side.LONG,
+        score=80.0,
+        reason="test long",
+        entry_price=100.0,
+        stop_loss=95.0,
+        take_profit=110.0,
+    )
+
+
+def make_short_signal() -> Signal:
+    return Signal(
+        symbol=Symbol.BTC,
+        action=SignalAction.SELL,
+        side=Side.SHORT,
+        score=80.0,
+        reason="test short",
+        entry_price=100.0,
+        stop_loss=105.0,
+        take_profit=90.0,
+    )
+
+
+def make_long_order() -> OrderRequest:
+    return OrderRequest(
+        symbol=Symbol.BTC,
+        side=Side.LONG,
+        quantity=1.0,
+        entry_price=100.0,
+        stop_loss=95.0,
+        take_profit=110.0,
+    )
+
+
+def make_short_order() -> OrderRequest:
+    return OrderRequest(
+        symbol=Symbol.BTC,
+        side=Side.SHORT,
+        quantity=1.0,
+        entry_price=100.0,
+        stop_loss=105.0,
+        take_profit=90.0,
+    )

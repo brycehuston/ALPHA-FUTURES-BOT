@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from enum import Enum
+from math import isfinite
 from typing import Any, Mapping
 
 from alpha_futures_bot.models import BotMode, Symbol
@@ -40,10 +41,12 @@ ALLOWED_TOP_LEVEL_KEYS = {"mode", "symbol", "risk"}
 class RiskSettings:
     """Static risk settings required before any future paper order is allowed."""
 
-    max_position_notional: float = 1_000.0
-    max_risk_per_trade_pct: float = 1.0
+    max_position_notional: float = 10_000.0
+    max_risk_per_trade_pct: float = 0.005
     min_signal_score: float = 70.0
     max_leverage: float = 1.0
+    daily_max_loss_pct: float = 0.02
+    max_open_positions: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,26 +140,49 @@ def _parse_risk(value: Any) -> RiskSettings:
         max_risk_per_trade_pct=_parse_number(value["max_risk_per_trade_pct"], "max_risk_per_trade_pct"),
         min_signal_score=_parse_number(value["min_signal_score"], "min_signal_score"),
         max_leverage=_parse_number(value["max_leverage"], "max_leverage"),
+        daily_max_loss_pct=_parse_number(value["daily_max_loss_pct"], "daily_max_loss_pct"),
+        max_open_positions=_parse_int(value["max_open_positions"], "max_open_positions"),
     )
 
 
 def _validate_risk(risk: RiskSettings) -> None:
     if not isinstance(risk, RiskSettings):
         raise ConfigError("Risk settings must be a RiskSettings instance")
+    numeric_values = (
+        risk.max_position_notional,
+        risk.max_risk_per_trade_pct,
+        risk.min_signal_score,
+        risk.max_leverage,
+        risk.daily_max_loss_pct,
+    )
+    if any(not isfinite(value) for value in numeric_values):
+        raise ConfigError("Risk settings must be finite")
     if risk.max_position_notional <= 0:
         raise ConfigError("max_position_notional must be greater than 0")
-    if not 0 < risk.max_risk_per_trade_pct <= 100:
-        raise ConfigError("max_risk_per_trade_pct must be in the range (0, 100]")
+    if not 0 < risk.max_risk_per_trade_pct <= 1:
+        raise ConfigError("max_risk_per_trade_pct must be in the range (0, 1]")
     if not 0 <= risk.min_signal_score <= 100:
         raise ConfigError("min_signal_score must be in the range [0, 100]")
     if risk.max_leverage != 1.0:
         raise ConfigError("max_leverage must remain 1.0 in V1")
+    if not 0 < risk.daily_max_loss_pct <= 1:
+        raise ConfigError("daily_max_loss_pct must be in the range (0, 1]")
+    if not isinstance(risk.max_open_positions, int) or isinstance(risk.max_open_positions, bool):
+        raise ConfigError("max_open_positions must be an integer")
+    if risk.max_open_positions < 1:
+        raise ConfigError("max_open_positions must be at least 1")
 
 
 def _parse_number(value: Any, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(f"{name} must be numeric")
     return float(value)
+
+
+def _parse_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{name} must be an integer")
+    return value
 
 
 def _normalize_enum_value(value: Any) -> str:

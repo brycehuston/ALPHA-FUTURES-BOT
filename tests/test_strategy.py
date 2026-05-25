@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from alpha_futures_bot.models import Side, Signal, SignalAction
+from alpha_futures_bot.indicators import calculate_indicators
 from alpha_futures_bot.strategy import generate_signal
 
 
@@ -14,6 +15,11 @@ def test_bullish_pullback_can_produce_long_signal() -> None:
     assert signal.action is SignalAction.BUY
     assert signal.side is Side.LONG
     assert signal.score >= 70.0
+    snapshot = calculate_indicators(make_bullish_pullback_candles())
+    assert snapshot is not None
+    assert signal.entry_price == snapshot.last_close
+    assert signal.stop_loss == snapshot.last_close - (1.5 * snapshot.atr)
+    assert signal.take_profit == snapshot.last_close + (3.0 * snapshot.atr)
 
 
 def test_bearish_pullback_can_produce_short_signal() -> None:
@@ -24,6 +30,11 @@ def test_bearish_pullback_can_produce_short_signal() -> None:
     assert signal.action is SignalAction.SELL
     assert signal.side is Side.SHORT
     assert signal.score >= 70.0
+    snapshot = calculate_indicators(make_bearish_pullback_candles())
+    assert snapshot is not None
+    assert signal.entry_price == snapshot.last_close
+    assert signal.stop_loss == snapshot.last_close + (1.5 * snapshot.atr)
+    assert signal.take_profit == snapshot.last_close - (3.0 * snapshot.atr)
 
 
 def test_no_trade_regime_produces_no_trade_signal() -> None:

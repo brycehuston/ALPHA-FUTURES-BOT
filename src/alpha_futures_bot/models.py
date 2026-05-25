@@ -79,7 +79,7 @@ class OrderRequest:
     quantity: float
     entry_price: float
     stop_loss: float
-    take_profit: float | None = None
+    take_profit: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,4 +92,21 @@ class PaperPosition:
     entry_price: float
     stop_loss: float
     opened_at: datetime
-    take_profit: float | None = None
+    take_profit: float
+
+
+@dataclass(frozen=True, slots=True)
+class ClosedPosition:
+    """A completed simulated paper position."""
+
+    symbol: Symbol
+    side: Side
+    quantity: float
+    entry_price: float
+    exit_price: float
+    stop_loss: float
+    take_profit: float
+    opened_at: datetime
+    closed_at: datetime
+    realized_pnl: float
+    close_reason: str

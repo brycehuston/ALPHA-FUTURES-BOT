@@ -30,26 +30,32 @@ def generate_signal(candles: Sequence[Candle]) -> Signal:
     if regime is Regime.BULL_TREND:
         score = _score_long(snapshot, last_candle)
         if score >= default_config().risk.min_signal_score:
+            entry_price = snapshot.last_close
             return Signal(
                 symbol=Symbol.BTC,
                 action=SignalAction.BUY,
                 side=Side.LONG,
                 score=score,
                 reason="bull trend pullback",
-                entry_price=snapshot.last_close,
+                entry_price=entry_price,
+                stop_loss=entry_price - (1.5 * snapshot.atr),
+                take_profit=entry_price + (3.0 * snapshot.atr),
             )
         return _no_trade("long pullback score below threshold", score)
 
     if regime is Regime.BEAR_TREND:
         score = _score_short(snapshot, last_candle)
         if score >= default_config().risk.min_signal_score:
+            entry_price = snapshot.last_close
             return Signal(
                 symbol=Symbol.BTC,
                 action=SignalAction.SELL,
                 side=Side.SHORT,
                 score=score,
                 reason="bear trend pullback",
-                entry_price=snapshot.last_close,
+                entry_price=entry_price,
+                stop_loss=entry_price + (1.5 * snapshot.atr),
+                take_profit=entry_price - (3.0 * snapshot.atr),
             )
         return _no_trade("short pullback score below threshold", score)
 

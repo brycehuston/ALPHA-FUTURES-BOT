@@ -15,6 +15,10 @@ def test_default_config_validates() -> None:
     assert config.symbol is Symbol.BTC
     assert isinstance(config.risk, RiskSettings)
     assert config.risk.min_signal_score == 70.0
+    assert config.risk.max_position_notional == 10_000.0
+    assert config.risk.max_risk_per_trade_pct == 0.005
+    assert config.risk.daily_max_loss_pct == 0.02
+    assert config.risk.max_open_positions == 1
 
 
 @pytest.mark.parametrize("mode", ["PAPER", "TEST", BotMode.PAPER, BotMode.TEST])
@@ -105,11 +109,15 @@ def test_missing_top_level_risk_fails(valid_config_dict) -> None:
         ("max_position_notional", 0),
         ("max_position_notional", -1),
         ("max_risk_per_trade_pct", 0),
-        ("max_risk_per_trade_pct", 101),
+        ("max_risk_per_trade_pct", 1.01),
         ("min_signal_score", -0.01),
         ("min_signal_score", 100.01),
         ("max_leverage", 2.0),
         ("max_leverage", 0.0),
+        ("daily_max_loss_pct", 0),
+        ("daily_max_loss_pct", 1.01),
+        ("max_open_positions", 0),
+        ("max_open_positions", 1.5),
     ],
 )
 def test_invalid_risk_settings_fail(valid_config_dict, key: str, value: float) -> None:
@@ -122,7 +130,14 @@ def test_invalid_risk_settings_fail(valid_config_dict, key: str, value: float) -
 
 @pytest.mark.parametrize(
     "missing_key",
-    ["max_position_notional", "max_risk_per_trade_pct", "min_signal_score", "max_leverage"],
+    [
+        "max_position_notional",
+        "max_risk_per_trade_pct",
+        "min_signal_score",
+        "max_leverage",
+        "daily_max_loss_pct",
+        "max_open_positions",
+    ],
 )
 def test_missing_risk_settings_fail(valid_config_dict, missing_key: str) -> None:
     raw = valid_config_dict()
