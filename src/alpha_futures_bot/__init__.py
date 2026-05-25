@@ -18,14 +18,28 @@ from alpha_futures_bot.models import (
     Symbol,
 )
 from alpha_futures_bot.position import PositionDecision, PositionManager, PositionUpdate
+from alpha_futures_bot.presets import (
+    BALANCED_PRESET,
+    LOOSE_PRESET,
+    PRESET_NAMES,
+    PRESETS,
+    STRICT_PRESET,
+    PresetError,
+    StrategySettings,
+    get_preset,
+)
 from alpha_futures_bot.regime import detect_regime
 from alpha_futures_bot.reporting import (
     BacktestComparisonReport,
     BacktestComparisonRow,
     BacktestReport,
+    PresetComparisonReport,
+    PresetComparisonRow,
     build_backtest_report,
     build_comparison_report,
     build_comparison_row,
+    build_preset_comparison_report,
+    build_preset_comparison_row,
 )
 from alpha_futures_bot.risk import RiskDecision, evaluate_signal
 from alpha_futures_bot.strategy import generate_signal
@@ -33,6 +47,7 @@ from alpha_futures_bot.strategy import generate_signal
 __all__ = [
     "BrokerBase",
     "BrokerError",
+    "BALANCED_PRESET",
     "BacktestComparisonReport",
     "BacktestComparisonRow",
     "BacktestReport",
@@ -46,6 +61,11 @@ __all__ = [
     "OrderRequest",
     "PaperBroker",
     "PaperPosition",
+    "PresetComparisonReport",
+    "PresetComparisonRow",
+    "PresetError",
+    "PRESET_NAMES",
+    "PRESETS",
     "PositionDecision",
     "PositionManager",
     "PositionUpdate",
@@ -56,16 +76,22 @@ __all__ = [
     "SimulationLogger",
     "Signal",
     "SignalAction",
+    "StrategySettings",
+    "STRICT_PRESET",
+    "LOOSE_PRESET",
     "Symbol",
     "calculate_indicators",
     "build_backtest_report",
     "build_comparison_report",
     "build_comparison_row",
+    "build_preset_comparison_report",
+    "build_preset_comparison_row",
     "default_config",
     "detect_regime",
     "evaluate_signal",
     "filter_candles_by_date_range",
     "generate_signal",
+    "get_preset",
     "load_candles_from_csv",
     "load_config",
     "parse_backtest_date",

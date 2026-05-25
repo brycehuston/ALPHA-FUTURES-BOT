@@ -57,6 +57,33 @@ class BacktestComparisonReport:
     rows: tuple[BacktestComparisonRow, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PresetComparisonRow:
+    preset_name: str
+    total_candles: int
+    total_closed_trades: int
+    ending_equity: float
+    realized_pnl: float
+    return_percentage: float
+    win_rate: float
+    profit_factor: float
+    max_drawdown: float
+    best_trade: float
+    worst_trade: float
+    average_trade_pnl: float
+
+
+@dataclass(frozen=True, slots=True)
+class PresetComparisonReport:
+    total_presets: int
+    rows: tuple[PresetComparisonRow, ...]
+    best_return_preset: str
+    lowest_drawdown_preset: str
+    best_profit_factor_preset: str
+    most_trades_preset: str
+    fewest_trades_preset: str
+
+
 def build_backtest_report(
     *,
     total_candles: int,
@@ -132,6 +159,46 @@ def build_comparison_row(
 
 def build_comparison_report(rows: Sequence[BacktestComparisonRow]) -> BacktestComparisonReport:
     return BacktestComparisonReport(total_runs=len(rows), rows=tuple(rows))
+
+
+def build_preset_comparison_row(*, preset_name: str, report: BacktestReport) -> PresetComparisonRow:
+    return PresetComparisonRow(
+        preset_name=preset_name,
+        total_candles=report.total_candles,
+        total_closed_trades=report.total_closed_trades,
+        ending_equity=report.ending_equity,
+        realized_pnl=report.realized_pnl,
+        return_percentage=report.return_percentage,
+        win_rate=report.win_rate,
+        profit_factor=report.profit_factor,
+        max_drawdown=report.max_drawdown,
+        best_trade=report.best_trade,
+        worst_trade=report.worst_trade,
+        average_trade_pnl=report.average_trade_pnl,
+    )
+
+
+def build_preset_comparison_report(rows: Sequence[PresetComparisonRow]) -> PresetComparisonReport:
+    safe_rows = tuple(rows)
+    if not safe_rows:
+        return PresetComparisonReport(
+            total_presets=0,
+            rows=(),
+            best_return_preset="",
+            lowest_drawdown_preset="",
+            best_profit_factor_preset="",
+            most_trades_preset="",
+            fewest_trades_preset="",
+        )
+    return PresetComparisonReport(
+        total_presets=len(safe_rows),
+        rows=safe_rows,
+        best_return_preset=max(safe_rows, key=lambda row: row.return_percentage).preset_name,
+        lowest_drawdown_preset=min(safe_rows, key=lambda row: row.max_drawdown).preset_name,
+        best_profit_factor_preset=max(safe_rows, key=lambda row: row.profit_factor).preset_name,
+        most_trades_preset=max(safe_rows, key=lambda row: row.total_closed_trades).preset_name,
+        fewest_trades_preset=min(safe_rows, key=lambda row: row.total_closed_trades).preset_name,
+    )
 
 
 def _profit_factor(wins: Sequence[float], losses: Sequence[float]) -> float:

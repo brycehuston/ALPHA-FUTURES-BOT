@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from alpha_futures_bot.data import DataError
+from alpha_futures_bot.presets import LOOSE_PRESET, PresetError
 from alpha_futures_bot.runner import SimulationSummary, run_simulation
 from alpha_futures_bot.runner import main as runner_main
-from alpha_futures_bot.runner import run_simulation_comparison
+from alpha_futures_bot.runner import _config_for_preset, run_preset_comparison, run_simulation_comparison
 
 
 def test_full_offline_simulation_writes_logs_and_summary(tmp_path: Path) -> None:
@@ -20,6 +21,7 @@ def test_full_offline_simulation_writes_logs_and_summary(tmp_path: Path) -> None
 
     assert isinstance(summary, SimulationSummary)
     assert summary.total_candles == 221
+    assert summary.preset_name == "balanced"
     assert summary.scans_written == 221
     assert summary.report.total_candles == 221
     assert summary.report.total_closed_trades >= 1
@@ -32,6 +34,31 @@ def test_full_offline_simulation_writes_logs_and_summary(tmp_path: Path) -> None
     payload = json.loads((logs_dir / "summary.json").read_text(encoding="utf-8"))
     assert payload["total_candles"] == 221
     assert "profit_factor" in payload
+
+
+def test_balanced_preset_preserves_default_runner_behavior(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+
+    default_summary = run_simulation(csv_path, tmp_path / "default")
+    balanced_summary = run_simulation(csv_path, tmp_path / "balanced", preset="balanced")
+
+    assert balanced_summary.report == default_summary.report
+    assert balanced_summary.preset_name == "balanced"
+
+
+def test_loose_preset_uses_derived_risk_config_with_min_score_60() -> None:
+    config = _config_for_preset(LOOSE_PRESET)
+
+    assert config.risk.min_signal_score == 60.0
+    assert config.risk.max_risk_per_trade_pct == 0.005
+    assert config.risk.max_position_notional == 10_000.0
+
+
+def test_invalid_preset_fails_closed(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+
+    with pytest.raises(PresetError):
+        run_simulation(csv_path, tmp_path / "logs", preset="remote")
 
 
 def test_single_run_can_write_sanitized_custom_summary_name(tmp_path: Path) -> None:
@@ -117,6 +144,47 @@ def test_multi_file_comparison_runs_independently_and_writes_isolated_logs(tmp_p
     payload = json.loads((logs_dir / "comparison.json").read_text(encoding="utf-8"))
     assert payload["total_runs"] == 2
     assert payload["rows"][0]["file_name"] == "simulation.csv"
+
+
+def test_preset_comparison_runs_all_presets_and_writes_isolated_logs(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+    logs_dir = tmp_path / "logs"
+
+    summary = run_preset_comparison(csv_path, logs_dir)
+
+    assert summary.comparison.total_presets == 3
+    assert [item.preset_name for item in summary.summaries] == ["strict", "balanced", "loose"]
+    assert (logs_dir / "preset_comparison.json").exists()
+    for preset_name in ("strict", "balanced", "loose"):
+        assert (logs_dir / "presets" / preset_name / "scans.csv").exists()
+        assert (logs_dir / "presets" / preset_name / "trades.csv").exists()
+        assert (logs_dir / "presets" / preset_name / "summary.json").exists()
+    payload = json.loads((logs_dir / "preset_comparison.json").read_text(encoding="utf-8"))
+    assert payload["total_presets"] == 3
+
+
+def test_cli_compare_presets_rejects_multiple_candle_files(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+
+    with pytest.raises(DataError):
+        runner_main(["--candles", str(csv_path), str(csv_path), "--logs", str(tmp_path / "logs"), "--compare-presets"])
+
+
+def test_cli_compare_presets_rejects_custom_summary_name(tmp_path: Path) -> None:
+    csv_path = _write_trade_simulation_csv(tmp_path)
+
+    with pytest.raises(DataError):
+        runner_main(
+            [
+                "--candles",
+                str(csv_path),
+                "--logs",
+                str(tmp_path / "logs"),
+                "--compare-presets",
+                "--summary-name",
+                "custom.json",
+            ]
+        )
 
 
 def test_cli_rejects_summary_name_for_multi_file_run(tmp_path: Path) -> None:

@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alpha_futures_bot.models import Side, Signal, SignalAction
+from alpha_futures_bot.models import Candle, Side, Signal, SignalAction
 from alpha_futures_bot.indicators import calculate_indicators
+from alpha_futures_bot.presets import BALANCED_PRESET, LOOSE_PRESET, STRICT_PRESET
 from alpha_futures_bot.strategy import generate_signal
 
 
 def test_bullish_pullback_can_produce_long_signal() -> None:
     from conftest import make_bullish_pullback_candles
 
-    signal = generate_signal(make_bullish_pullback_candles())
+    signal = generate_signal(make_bullish_pullback_candles(), BALANCED_PRESET)
 
     assert signal.action is SignalAction.BUY
     assert signal.side is Side.LONG
@@ -25,7 +26,7 @@ def test_bullish_pullback_can_produce_long_signal() -> None:
 def test_bearish_pullback_can_produce_short_signal() -> None:
     from conftest import make_bearish_pullback_candles
 
-    signal = generate_signal(make_bearish_pullback_candles())
+    signal = generate_signal(make_bearish_pullback_candles(), BALANCED_PRESET)
 
     assert signal.action is SignalAction.SELL
     assert signal.side is Side.SHORT
@@ -66,6 +67,24 @@ def test_low_score_produces_no_trade_signal() -> None:
     assert signal.score < 70.0
 
 
+def test_strict_rejects_controlled_lower_quality_signal_that_loose_accepts() -> None:
+    candles = _lower_quality_bullish_pullback()
+
+    strict_signal = generate_signal(candles, STRICT_PRESET)
+    loose_signal = generate_signal(candles, LOOSE_PRESET)
+
+    assert strict_signal.action is SignalAction.NO_TRADE
+    assert loose_signal.action is SignalAction.BUY
+    assert loose_signal.score >= LOOSE_PRESET.min_signal_score
+
+
+def test_loose_scores_without_required_volume_or_candle_confirmation() -> None:
+    signal = generate_signal(_lower_quality_bullish_pullback(), LOOSE_PRESET)
+
+    assert signal.action is SignalAction.BUY
+    assert signal.score == 100.0
+
+
 def test_insufficient_or_bad_candles_produce_no_trade_signal() -> None:
     from conftest import make_flat_candles, make_too_short_candles
 
@@ -96,6 +115,20 @@ def test_strategy_returns_signal_objects_only() -> None:
     assert not hasattr(signal, "client")
 
 
+def test_strategy_imports_no_broker_risk_position_or_network_modules() -> None:
+    source = Path("src/alpha_futures_bot/strategy.py").read_text(encoding="utf-8").lower()
+
+    for forbidden in (
+        "from alpha_futures_bot.broker",
+        "from alpha_futures_bot.position",
+        "alpha_futures_bot.risk",
+        "requests",
+        "httpx",
+        "socket",
+    ):
+        assert forbidden not in source
+
+
 def test_no_rsi_fields_config_imports_or_tests_exist() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     checked_paths = [
@@ -109,3 +142,20 @@ def test_no_rsi_fields_config_imports_or_tests_exist() -> None:
             if path.name == "test_strategy.py":
                 text = text.replace("rsi", "")
             assert "rsi" not in text
+
+
+def _lower_quality_bullish_pullback() -> list[Candle]:
+    from conftest import make_bullish_pullback_candles
+
+    candles = make_bullish_pullback_candles()
+    last = candles[-1]
+    candles[-1] = Candle(
+        symbol=last.symbol,
+        timestamp=last.timestamp,
+        open=last.close + 1.0,
+        high=last.high + 1.0,
+        low=last.low,
+        close=last.close,
+        volume=1.0,
+    )
+    return candles

@@ -40,6 +40,12 @@ Run the local paper simulation with synthetic BTC candles:
 python -m alpha_futures_bot.runner --candles data/sample_btc_candles.csv --logs logs
 ```
 
+Run with an explicit local strategy preset:
+
+```powershell
+python -m alpha_futures_bot.runner --candles data/sample_btc_candles.csv --logs logs --preset balanced
+```
+
 Run a local historical BTC CSV over an inclusive date range:
 
 ```powershell
@@ -50,6 +56,12 @@ Compare multiple local BTC CSV files:
 
 ```powershell
 python -m alpha_futures_bot.runner --candles data/history/btc_2023.csv data/history/btc_2024.csv --logs logs
+```
+
+Compare all local strategy presets on one BTC CSV:
+
+```powershell
+python -m alpha_futures_bot.runner --candles data/history/btc_1h.csv --logs logs --compare-presets
 ```
 
 Historical CSV files must include:
@@ -71,6 +83,14 @@ Single-file simulations write:
 - `logs/summary.json`
 
 Multi-file comparisons write isolated per-run logs under `logs/runs/<safe_file_stem>/` and a combined `logs/comparison.json`.
+
+Local strategy presets are fixed constants for offline research only:
+
+- `strict`: higher minimum score and tighter confirmations.
+- `balanced`: current default behavior.
+- `loose`: lower minimum score and lighter confirmations.
+
+Preset comparisons write isolated per-preset logs under `logs/presets/<preset>/` and a combined `logs/preset_comparison.json`.
 
 The summary report includes return percentage, win rate, profit factor, max drawdown, equity high/low, average trade PnL, and best/worst trade.
 

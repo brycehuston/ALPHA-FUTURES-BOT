@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from alpha_futures_bot.indicators import IndicatorSnapshot, calculate_indicators
 from alpha_futures_bot.models import Regime
+from alpha_futures_bot.presets import LOOSE_PRESET, STRICT_PRESET
 from alpha_futures_bot.regime import detect_regime
 
 
@@ -61,3 +62,19 @@ def test_flat_equal_boundaries_return_no_trade() -> None:
     )
 
     assert detect_regime(snapshot) is Regime.NO_TRADE
+
+
+def test_custom_regime_vwap_tolerance_changes_classification() -> None:
+    snapshot = IndicatorSnapshot(
+        ema_fast=105.0,
+        ema_slow=100.0,
+        ema_trend=90.0,
+        vwap=100.0,
+        atr=2.0,
+        volume_average=100.0,
+        last_close=99.4,
+        last_volume=100.0,
+    )
+
+    assert detect_regime(snapshot, STRICT_PRESET) is Regime.NO_TRADE
+    assert detect_regime(snapshot, LOOSE_PRESET) is Regime.BULL_TREND

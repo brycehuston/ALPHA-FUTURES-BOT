@@ -63,6 +63,7 @@ class SimulationLogger:
         self.trades_path = self.logs_dir / "trades.csv"
         self.summary_path = self.logs_dir / _sanitize_summary_name(summary_name)
         self.comparison_path = self.logs_dir / "comparison.json"
+        self.preset_comparison_path = self.logs_dir / "preset_comparison.json"
         if initialize_csv:
             self._ensure_file(self.scans_path, SCAN_LOG_FIELDS)
             self._ensure_file(self.trades_path, TRADE_LOG_FIELDS)
@@ -99,6 +100,9 @@ class SimulationLogger:
 
     def write_comparison(self, report: Any) -> None:
         self._write_json(self.comparison_path, report)
+
+    def write_preset_comparison(self, report: Any) -> None:
+        self._write_json(self.preset_comparison_path, report)
 
     def _ensure_file(self, path: Path, fields: tuple[str, ...]) -> None:
         if path.exists():

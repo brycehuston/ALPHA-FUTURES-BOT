@@ -6,15 +6,17 @@ from math import isfinite
 
 from alpha_futures_bot.indicators import IndicatorSnapshot
 from alpha_futures_bot.models import Regime
+from alpha_futures_bot.presets import StrategySettings, get_preset
 
 
-def detect_regime(snapshot: IndicatorSnapshot | None) -> Regime:
+def detect_regime(snapshot: IndicatorSnapshot | None, settings: StrategySettings | None = None) -> Regime:
     """Detect trend regime, preferring NO_TRADE for invalid or unclear states."""
 
+    strategy_settings = get_preset(settings)
     if snapshot is None or not _snapshot_is_valid(snapshot):
         return Regime.NO_TRADE
 
-    vwap_near_band = 0.25 * snapshot.atr
+    vwap_near_band = strategy_settings.regime_near_vwap_atr_multiplier * snapshot.atr
     bullish = (
         snapshot.last_close > snapshot.ema_trend
         and snapshot.ema_fast > snapshot.ema_slow

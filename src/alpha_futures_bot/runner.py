@@ -4,25 +4,30 @@ from __future__ import annotations
 
 import argparse
 import re
+from dataclasses import dataclass, replace
 from datetime import date
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
 from alpha_futures_bot.broker import PaperBroker
+from alpha_futures_bot.config import BotConfig, default_config
 from alpha_futures_bot.data import DataError, filter_candles_by_date_range, load_candles_from_csv, parse_backtest_date
 from alpha_futures_bot.indicators import calculate_indicators
 from alpha_futures_bot.logging_service import SimulationLogger
 from alpha_futures_bot.models import Candle, Regime, Signal
 from alpha_futures_bot.position import PositionDecision, PositionManager
+from alpha_futures_bot.presets import PRESET_NAMES, StrategySettings, get_preset
 from alpha_futures_bot.regime import detect_regime
 from alpha_futures_bot.reporting import (
     BacktestComparisonReport,
     BacktestComparisonRow,
     BacktestReport,
+    PresetComparisonReport,
     build_backtest_report,
     build_comparison_report,
     build_comparison_row,
+    build_preset_comparison_report,
+    build_preset_comparison_row,
 )
 from alpha_futures_bot.strategy import generate_signal
 
@@ -30,6 +35,7 @@ from alpha_futures_bot.strategy import generate_signal
 @dataclass(frozen=True, slots=True)
 class SimulationSummary:
     source_file: str
+    preset_name: str
     total_candles: int
     starting_balance: float
     ending_cash_balance: float
@@ -46,6 +52,12 @@ class MultiSimulationSummary:
     comparison: BacktestComparisonReport
 
 
+@dataclass(frozen=True, slots=True)
+class PresetSimulationSummary:
+    summaries: tuple[SimulationSummary, ...]
+    comparison: PresetComparisonReport
+
+
 def run_simulation(
     candle_csv: str | Path,
     logs_dir: str | Path = "logs",
@@ -53,12 +65,14 @@ def run_simulation(
     start: str | date | None = None,
     end: str | date | None = None,
     summary_name: str = "summary.json",
+    preset: str | StrategySettings = "balanced",
 ) -> SimulationSummary:
+    settings = get_preset(preset)
     start_date = parse_backtest_date(start) if isinstance(start, str) or start is None else start
     end_date = parse_backtest_date(end) if isinstance(end, str) or end is None else end
     candles = filter_candles_by_date_range(load_candles_from_csv(candle_csv), start_date, end_date)
     broker = PaperBroker(starting_balance=starting_balance)
-    manager = PositionManager(broker)
+    manager = PositionManager(broker, config=_config_for_preset(settings))
     logger = SimulationLogger(logs_dir, summary_name=summary_name)
     scans_written = 0
     equity_curve: list[float] = []
@@ -69,8 +83,8 @@ def run_simulation(
             logger.log_trade(update.closed_position, broker.cash_balance)
 
         history = candles[: index + 1]
-        signal = generate_signal(history)
-        regime = detect_regime(calculate_indicators(history))
+        signal = generate_signal(history, settings)
+        regime = detect_regime(calculate_indicators(history), settings)
         decision = manager.handle_signal(signal, candle.timestamp)
 
         unrealized_pnl = broker.mark_to_market(candle.symbol, candle.close)
@@ -104,6 +118,7 @@ def run_simulation(
 
     return SimulationSummary(
         source_file=Path(candle_csv).name,
+        preset_name=settings.name,
         total_candles=len(candles),
         starting_balance=float(starting_balance),
         ending_cash_balance=broker.cash_balance,
@@ -121,6 +136,7 @@ def run_simulation_comparison(
     starting_balance: float = 10_000.0,
     start: str | date | None = None,
     end: str | date | None = None,
+    preset: str | StrategySettings = "balanced",
 ) -> MultiSimulationSummary:
     if len(candle_csvs) < 2:
         raise DataError("Comparison requires at least two local candle CSV files")
@@ -139,6 +155,7 @@ def run_simulation_comparison(
             starting_balance=starting_balance,
             start=start,
             end=end,
+            preset=preset,
         )
         summaries.append(summary)
         rows.append(
@@ -155,6 +172,34 @@ def run_simulation_comparison(
     return MultiSimulationSummary(summaries=tuple(summaries), comparison=comparison)
 
 
+def run_preset_comparison(
+    candle_csv: str | Path,
+    logs_dir: str | Path = "logs",
+    starting_balance: float = 10_000.0,
+    start: str | date | None = None,
+    end: str | date | None = None,
+) -> PresetSimulationSummary:
+    root_logs_dir = Path(logs_dir)
+    summaries: list[SimulationSummary] = []
+    rows = []
+
+    for preset_name in PRESET_NAMES:
+        summary = run_simulation(
+            candle_csv,
+            root_logs_dir / "presets" / preset_name,
+            starting_balance=starting_balance,
+            start=start,
+            end=end,
+            preset=preset_name,
+        )
+        summaries.append(summary)
+        rows.append(build_preset_comparison_row(preset_name=preset_name, report=summary.report))
+
+    comparison = build_preset_comparison_report(rows)
+    SimulationLogger(root_logs_dir, initialize_csv=False).write_preset_comparison(comparison)
+    return PresetSimulationSummary(summaries=tuple(summaries), comparison=comparison)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run an offline BTC paper simulation.")
     parser.add_argument("--candles", nargs="+", required=True, help="One or more local BTC candle CSV paths.")
@@ -163,7 +208,26 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--end", help="Optional inclusive end date in YYYY-MM-DD format.")
     parser.add_argument("--starting-balance", type=float, default=10_000.0)
     parser.add_argument("--summary-name", default="summary.json", help="Single-run summary JSON filename.")
+    parser.add_argument("--preset", choices=PRESET_NAMES, default="balanced", help="Local strategy preset.")
+    parser.add_argument("--compare-presets", action="store_true", help="Compare all local strategy presets on one CSV.")
     args = parser.parse_args(argv)
+
+    if args.compare_presets:
+        if len(args.candles) != 1:
+            raise DataError("--compare-presets requires exactly one local candle CSV")
+        if args.summary_name != "summary.json":
+            raise DataError("--summary-name is not supported with --compare-presets")
+        comparison = run_preset_comparison(
+            args.candles[0],
+            args.logs,
+            args.starting_balance,
+            start=args.start,
+            end=args.end,
+        )
+        print(f"Preset comparison complete: presets={comparison.comparison.total_presets}")
+        for summary in comparison.summaries:
+            print(_simulation_line(summary))
+        return
 
     if len(args.candles) == 1:
         summary = run_simulation(
@@ -173,6 +237,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             start=args.start,
             end=args.end,
             summary_name=args.summary_name,
+            preset=args.preset,
         )
         print(_simulation_line(summary))
         return
@@ -186,6 +251,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         args.starting_balance,
         start=args.start,
         end=args.end,
+        preset=args.preset,
     )
     print(f"Comparison complete: runs={comparison.comparison.total_runs}")
     for summary in comparison.summaries:
@@ -196,6 +262,7 @@ def _simulation_line(summary: SimulationSummary) -> str:
     return (
         "Simulation complete: "
         f"file={summary.source_file}, "
+        f"preset={summary.preset_name}, "
         f"candles={summary.total_candles}, "
         f"starting_balance={summary.starting_balance:.2f}, "
         f"ending_cash_balance={summary.ending_cash_balance:.2f}, "
@@ -227,6 +294,11 @@ def _safe_run_stems(candle_csvs: Sequence[str | Path]) -> tuple[str, ...]:
             safe = f"{safe}_{counts[safe]}"
         stems.append(safe)
     return tuple(stems)
+
+
+def _config_for_preset(settings: StrategySettings) -> BotConfig:
+    config = default_config()
+    return replace(config, risk=replace(config.risk, min_signal_score=settings.min_signal_score))
 
 
 def _scan_row(

@@ -116,6 +116,17 @@ def test_write_comparison_does_not_require_root_scan_trade_logs(tmp_path: Path) 
     assert not (logs_dir / "trades.csv").exists()
 
 
+def test_write_preset_comparison_does_not_require_root_scan_trade_logs(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logger = SimulationLogger(logs_dir, initialize_csv=False)
+
+    logger.write_preset_comparison({"total_presets": 1, "rows": [{"preset_name": "balanced"}]})
+
+    assert (logs_dir / "preset_comparison.json").exists()
+    assert not (logs_dir / "scans.csv").exists()
+    assert not (logs_dir / "trades.csv").exists()
+
+
 def test_summary_json_has_no_secret_or_exchange_fields(tmp_path: Path) -> None:
     logger = SimulationLogger(tmp_path / "logs")
     report = build_backtest_report(
